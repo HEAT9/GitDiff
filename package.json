@@ -1,0 +1,186 @@
+{
+  "name": "gitdiff",
+  "displayName": "GitDiff",
+  "description": "GitDiff：侧栏随当前文件展示历史，点提交对比该提交相对父提交的改动；双列对比两版文件快照。中/英界面，可选 GitLab 风格差异主题。",
+  "version": "0.6.0",
+  "publisher": "local-dev",
+  "icon": "media/gtdiff-icon.png",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM",
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:gitHistoryCompare.sidebar",
+    "onCommand:gitHistoryCompare.compareWithHead",
+    "onCommand:gitHistoryCompare.compareWorkingWithRevision",
+    "onCommand:gitHistoryCompare.compareTwoRevisions",
+    "onCommand:gitHistoryCompare.pickCompareHead",
+    "onCommand:gitHistoryCompare.pickCompareRevision",
+    "onCommand:gitHistoryCompare.pickCompareTwoRevisions",
+    "onCommand:gitHistoryCompare.openSidebar"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gitHistoryCompare.compareWithHead",
+        "category": "GitDiff",
+        "title": "与 HEAD 比较（工作区）",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "gitHistoryCompare.compareWorkingWithRevision",
+        "category": "GitDiff",
+        "title": "与指定版本比较（工作区在右侧）"
+      },
+      {
+        "command": "gitHistoryCompare.compareTwoRevisions",
+        "category": "GitDiff",
+        "title": "比较两个历史版本"
+      },
+      {
+        "command": "gitHistoryCompare.pickCompareHead",
+        "category": "GitDiff",
+        "title": "与 HEAD 比较…（手动选择文件）"
+      },
+      {
+        "command": "gitHistoryCompare.pickCompareRevision",
+        "category": "GitDiff",
+        "title": "与指定版本比较…（手动选择文件）"
+      },
+      {
+        "command": "gitHistoryCompare.pickCompareTwoRevisions",
+        "category": "GitDiff",
+        "title": "比较两个版本…（手动选择文件）"
+      },
+      {
+        "command": "gitHistoryCompare.openSidebar",
+        "category": "GitDiff",
+        "title": "打开比较侧边栏",
+        "icon": "$(git-compare)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gitdiff",
+          "title": "GitDiff",
+          "icon": "media/activity-gitdiff.svg"
+        }
+      ]
+    },
+    "views": {
+      "gitdiff": [
+        {
+          "type": "webview",
+          "id": "gitHistoryCompare.sidebar",
+          "name": "GitDiff",
+          "contextualTitle": "GitDiff"
+        }
+      ]
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "gitHistoryCompare.compareWithHead",
+          "group": "navigation@9",
+          "when": "editorTextFocus && resourceScheme == file"
+        },
+        {
+          "command": "gitHistoryCompare.openSidebar",
+          "group": "navigation@8",
+          "when": "resourceScheme == file"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "gitHistoryCompare.compareWithHead",
+          "group": "3_compare",
+          "when": "resourceScheme == file"
+        },
+        {
+          "command": "gitHistoryCompare.compareWorkingWithRevision",
+          "group": "3_compare",
+          "when": "resourceScheme == file"
+        },
+        {
+          "command": "gitHistoryCompare.compareTwoRevisions",
+          "group": "3_compare",
+          "when": "resourceScheme == file"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "gitHistoryCompare.compareWithHead",
+          "group": "3_compare",
+          "when": "resourceScheme == file"
+        },
+        {
+          "command": "gitHistoryCompare.compareWorkingWithRevision",
+          "group": "3_compare",
+          "when": "resourceScheme == file"
+        },
+        {
+          "command": "gitHistoryCompare.compareTwoRevisions",
+          "group": "3_compare",
+          "when": "resourceScheme == file"
+        }
+      ]
+    },
+    "themes": [
+      {
+        "label": "GitLab 风格差异（浅色）",
+        "uiTheme": "vs",
+        "path": "./themes/gitlab-like-diff.json"
+      },
+      {
+        "label": "GitLab 风格差异（深色）",
+        "uiTheme": "vs-dark",
+        "path": "./themes/gitlab-like-diff-dark.json"
+      }
+    ]
+  },
+  "scripts": {
+    "install-deps": "bash scripts/install-deps.sh",
+    "icon:diamond": "bash scripts/extract-diamond-icon.sh",
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "bash scripts/build-vsix.sh",
+    "icon:two-circles": "bash scripts/extract-two-circles-icon.sh",
+    "icon:lines": "bash scripts/extract-lines-icon.sh",
+    "package:vsce": "npx @vscode/vsce package",
+    "publish:patch": "npx @vscode/vsce publish patch",
+    "publish:minor": "npx @vscode/vsce publish minor",
+    "publish:major": "npx @vscode/vsce publish major"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  },
+  "keywords": [
+    "git",
+    "diff",
+    "history",
+    "compare",
+    "scm",
+    "code-review"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/gitdiff.git"
+  },
+  "homepage": "https://github.com/your-org/gitdiff#readme",
+  "bugs": {
+    "url": "https://github.com/your-org/gitdiff/issues"
+  },
+  "galleryBanner": {
+    "color": "#0f172a",
+    "theme": "dark"
+  }
+}

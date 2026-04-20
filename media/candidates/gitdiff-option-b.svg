@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" rx="220" fill="#ffffff"/>
+  <circle cx="278" cy="512" r="170" fill="#f8fafc" stroke="#0f172a" stroke-width="26"/>
+  <circle cx="746" cy="512" r="170" fill="#f8fafc" stroke="#0f172a" stroke-width="26"/>
+  <line x1="228" y1="452" x2="330" y2="452" stroke="#ef4444" stroke-width="30" stroke-linecap="round"/>
+  <line x1="218" y1="530" x2="348" y2="530" stroke="#ef4444" stroke-width="30" stroke-linecap="round"/>
+  <line x1="702" y1="452" x2="804" y2="452" stroke="#16a34a" stroke-width="30" stroke-linecap="round"/>
+  <line x1="688" y1="530" x2="818" y2="530" stroke="#16a34a" stroke-width="30" stroke-linecap="round"/>
+  <path d="M438 512h148" stroke="#2563eb" stroke-width="36" stroke-linecap="round"/>
+  <path d="M554 452l92 60-92 60" fill="none" stroke="#2563eb" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="512" cy="782" r="26" fill="#0f172a"/>
+  <circle cx="458" cy="846" r="22" fill="#0f172a"/>
+  <circle cx="566" cy="846" r="22" fill="#0f172a"/>
+  <path d="M512 782l-54 64M512 782l54 64" stroke="#0f172a" stroke-width="16" stroke-linecap="round"/>
+</svg>

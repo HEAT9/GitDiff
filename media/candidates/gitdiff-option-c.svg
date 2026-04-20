@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" rx="220" fill="#ffffff"/>
+  <rect x="232" y="232" width="560" height="560" transform="rotate(45 512 512)" fill="#f8fafc" stroke="#0f172a" stroke-width="26"/>
+  <line x1="512" y1="322" x2="512" y2="702" stroke="#94a3b8" stroke-width="20" stroke-linecap="round"/>
+  <line x1="384" y1="418" x2="484" y2="418" stroke="#ef4444" stroke-width="28" stroke-linecap="round"/>
+  <line x1="364" y1="500" x2="484" y2="500" stroke="#ef4444" stroke-width="28" stroke-linecap="round"/>
+  <line x1="384" y1="582" x2="464" y2="582" stroke="#ef4444" stroke-width="28" stroke-linecap="round"/>
+  <line x1="540" y1="418" x2="640" y2="418" stroke="#16a34a" stroke-width="28" stroke-linecap="round"/>
+  <line x1="540" y1="500" x2="660" y2="500" stroke="#16a34a" stroke-width="28" stroke-linecap="round"/>
+  <line x1="560" y1="582" x2="640" y2="582" stroke="#16a34a" stroke-width="28" stroke-linecap="round"/>
+  <circle cx="258" cy="260" r="24" fill="#0f172a"/>
+  <circle cx="206" cy="206" r="20" fill="#0f172a"/>
+  <path d="M206 206l52 54" stroke="#0f172a" stroke-width="14" stroke-linecap="round"/>
+</svg>

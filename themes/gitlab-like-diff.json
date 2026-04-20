@@ -1,0 +1,16 @@
+{
+  "$schema": "vscode://schemas/color-theme",
+  "name": "GitLab 风格差异（浅色）",
+  "type": "light",
+  "colors": {
+    "editor.background": "#ffffff",
+    "editor.foreground": "#303030",
+    "diffEditor.insertedLineBackground": "#c7f0d255",
+    "diffEditor.insertedTextBackground": "#a6f3c888",
+    "diffEditor.removedLineBackground": "#ffd7d555",
+    "diffEditor.removedTextBackground": "#feb2a888",
+    "diffEditor.diagonalFill": "#e8e8e8",
+    "diffEditor.border": "#dcdcdc"
+  },
+  "tokenColors": []
+}
