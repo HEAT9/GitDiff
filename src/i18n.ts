@@ -34,6 +34,9 @@ export function webviewLabels(locale: Locale): Record<string, string> {
             historyTitle: 'History (this file)',
             historyHint:
                 'Click a commit: diff is this file at the parent vs at this commit (the change introduced by that commit).',
+            historyStats:
+                'Commits: {count} · Added lines: {add} · Deleted lines: {del} · Modified lines (est.): {mod}',
+            hoverMeta: 'Author: {author} | Date: {date}',
             twoTitle: 'Compare two versions',
             twoHint:
                 'Pick one commit on each side: compares the file snapshot at A vs at B, regardless of commits in between.',
@@ -64,6 +67,8 @@ export function webviewLabels(locale: Locale): Record<string, string> {
         historyTitle: '本文件修改历史',
         historyHint:
             '点击某条提交：对比内容为「该提交中的本文件」相对「其父提交中的同一文件」的差异（即本次提交对该文件的改动）。',
+        historyStats: '提交数：{count} · 新增行：{add} · 删除行：{del} · 修改行（估算）：{mod}',
+        hoverMeta: '提交者：{author} | 日期：{date}',
         twoTitle: '两个历史版本（快照对比）',
         twoHint:
             '左右各选一条提交：直接对比这两个提交里**该文件内容**的差异，与中间隔了多少个提交无关。',

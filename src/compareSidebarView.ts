@@ -10,7 +10,8 @@ type WebviewState = {
     basename: string;
     relPath: string;
     repoLabel: string;
-    commits: { id: string; subject: string }[];
+    commits: { id: string; subject: string; author: string; date: string }[];
+    stats: { add: number; del: number; mod: number };
     hint: string | null;
     locale: Locale;
     strings: Record<string, string>;
@@ -136,6 +137,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
                 relPath: '',
                 repoLabel: '',
                 commits: [],
+                stats: { add: 0, del: 0, mod: 0 },
                 hint: str.hintOpen,
                 locale,
                 strings: str,
@@ -150,12 +152,14 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
                 relPath: '',
                 repoLabel: '',
                 commits: [],
+                stats: { add: 0, del: 0, mod: 0 },
                 hint: str.hintNotRepo,
                 locale,
                 strings: str,
             };
         }
         const commits = await core.fetchRecentCommits(ctx.gitRoot, ctx.relPath, 80);
+        const stats = await core.fetchFileHistoryStats(ctx.gitRoot, ctx.relPath, 80);
         return {
             effectivePath: effective,
             pinnedPath: this._pinnedFsPath ?? null,
@@ -163,6 +167,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
             relPath: ctx.relPath,
             repoLabel: ctx.gitRoot,
             commits,
+            stats,
             hint: null,
             locale,
             strings: str,
@@ -225,6 +230,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
     button.lang-on { outline: 2px solid var(--link); outline-offset: 1px; }
     .section { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
     .hint { color: var(--muted); font-size: 12px; margin: 6px 0 10px; line-height: 1.45; }
+    .stats { color: var(--muted); font-size: 11px; margin: -2px 0 8px; line-height: 1.4; }
     .commits { max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: 2px; padding: 2px 0; }
     .commit { padding: 5px 8px; cursor: pointer; font-size: 11px; display: flex; gap: 8px; align-items: flex-start; }
     .commit:hover { background: var(--vscode-list-hoverBackground); }
@@ -259,6 +265,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
   <div class="section">
     <h1><span id="tHist">本文件修改历史</span> <span class="pill" id="pillHist">0</span> <span class="pill" id="pillHistUnit">条</span></h1>
     <p id="histHint" class="hint"></p>
+    <p id="histStats" class="stats"></p>
     <div id="commitsMain" class="commits"></div>
   </div>
 
@@ -310,9 +317,14 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
     function renderMainList(commits) {
       var box = el('commitsMain');
       box.innerHTML = '';
+      var t = window.__labels || {};
       (commits || []).forEach(function(c) {
         var row = document.createElement('div');
         row.className = 'commit';
+        var hover = (t.hoverMeta || 'Author: {author} | Date: {date}')
+          .replace('{author}', c.author || '')
+          .replace('{date}', c.date || '');
+        row.title = hover;
         var sid = document.createElement('span'); sid.className = 'commit-id'; sid.textContent = c.id;
         var ss = document.createElement('span'); ss.className = 'commit-sub'; ss.textContent = c.subject || '';
         row.appendChild(sid); row.appendChild(ss);
@@ -325,9 +337,14 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
 
     function renderSideList(container, commits, col, onPick) {
       container.innerHTML = '';
+      var t = window.__labels || {};
       (commits || []).forEach(function(c) {
         var row = document.createElement('div');
         row.className = 'commit';
+        var hover = (t.hoverMeta || 'Author: {author} | Date: {date}')
+          .replace('{author}', c.author || '')
+          .replace('{date}', c.date || '');
+        row.title = hover;
         var sid = document.createElement('span'); sid.className = 'commit-id'; sid.textContent = c.id;
         var ss = document.createElement('span'); ss.className = 'commit-sub'; ss.textContent = c.subject || '';
         row.appendChild(sid); row.appendChild(ss);
@@ -344,6 +361,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
 
     function setState(s) {
       var t = s.strings || {};
+      window.__labels = t;
       applyStrings(t);
       document.documentElement.lang = s.locale === 'en' ? 'en' : 'zh-CN';
 
@@ -355,6 +373,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
       var hint = el('hint');
       var btnClear = el('btnClearPin');
       var pillHist = el('pillHist');
+      var histStats = el('histStats');
 
       selLeft = ''; selRight = '';
       el('selLeftHint').textContent = t.none;
@@ -370,6 +389,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
         el('commitsMain').innerHTML = '';
         el('commitsLeft').innerHTML = '';
         el('commitsRight').innerHTML = '';
+        histStats.textContent = '';
         return;
       }
 
@@ -381,6 +401,11 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
 
       var n = (s.commits || []).length;
       pillHist.textContent = String(n);
+      histStats.textContent = (t.historyStats || 'Commits: {count} · Added: {add} · Deleted: {del} · Modified: {mod}')
+        .replace('{count}', String(n))
+        .replace('{add}', String((s.stats && s.stats.add) || 0))
+        .replace('{del}', String((s.stats && s.stats.del) || 0))
+        .replace('{mod}', String((s.stats && s.stats.mod) || 0));
 
       renderMainList(s.commits);
       renderSideList(el('commitsLeft'), s.commits, 'L', function(id) {

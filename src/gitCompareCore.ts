@@ -119,13 +119,13 @@ export async function fetchRecentCommits(
     gitRoot: string,
     relPath: string,
     limit: number
-): Promise<{ id: string; subject: string }[]> {
+): Promise<{ id: string; subject: string; author: string; date: string }[]> {
     try {
         const { stdout } = await runGit(gitRoot, [
             'log',
             '-n',
             String(limit),
-            '--pretty=format:%h%x09%s',
+            '--pretty=format:%h%x09%s%x09%an%x09%at',
             '--',
             relPath,
         ]);
@@ -133,13 +133,89 @@ export async function fetchRecentCommits(
             .split('\n')
             .filter(Boolean)
             .map((line) => {
-                const tab = line.indexOf('\t');
-                const id = tab >= 0 ? line.slice(0, tab) : line;
-                const subject = tab >= 0 ? line.slice(tab + 1) : '';
-                return { id, subject };
+                const parts = line.split('\t');
+                const id = parts[0] ?? '';
+                const subject = parts[1] ?? '';
+                const author = parts[2] ?? '';
+                const date = formatUnixTs(parts[3] ?? '');
+                return { id, subject, author, date };
             });
     } catch {
         return [];
+    }
+}
+
+function pad2(n: number): string {
+    return n < 10 ? `0${n}` : String(n);
+}
+
+/** 兼容老版本 git：用 %at 时间戳在本地格式化 */
+function formatUnixTs(raw: string): string {
+    const sec = Number(raw);
+    if (!Number.isFinite(sec) || sec <= 0) {
+        return raw || '';
+    }
+    const d = new Date(sec * 1000);
+    const y = d.getFullYear();
+    const m = pad2(d.getMonth() + 1);
+    const day = pad2(d.getDate());
+    const hh = pad2(d.getHours());
+    const mm = pad2(d.getMinutes());
+    const ss = pad2(d.getSeconds());
+    return `${y}-${m}-${day} ${hh}:${mm}:${ss}`;
+}
+
+/**
+ * 统计某文件历史中的“行级增删改估算”：
+ * - 基于 git log --numstat 聚合每次提交的 added/deleted 行数
+ * - 每次提交的“修改行”估算为 min(added, deleted)
+ * - 剩余 added/deleted 计入“新增/删除”
+ */
+export async function fetchFileHistoryStats(
+    gitRoot: string,
+    relPath: string,
+    limit: number
+): Promise<{ add: number; del: number; mod: number }> {
+    try {
+        const { stdout } = await runGit(gitRoot, [
+            'log',
+            '-n',
+            String(limit),
+            '--numstat',
+            '--pretty=format:@@@',
+            '--',
+            relPath,
+        ]);
+
+        let add = 0;
+        let del = 0;
+        let mod = 0;
+        for (const raw of stdout.split('\n')) {
+            const line = raw.trim();
+            if (!line || line === '@@@') {
+                continue;
+            }
+
+            // numstat: "<added>\t<deleted>\t<path>"
+            // 二进制文件会是 "-\t-\t<path>"，这里跳过
+            const parts = line.split('\t');
+            if (parts.length < 3) {
+                continue;
+            }
+            const a = Number(parts[0]);
+            const d = Number(parts[1]);
+            if (!Number.isFinite(a) || !Number.isFinite(d)) {
+                continue;
+            }
+
+            const m = Math.min(a, d);
+            mod += m;
+            add += a - m;
+            del += d - m;
+        }
+        return { add, del, mod };
+    } catch {
+        return { add: 0, del: 0, mod: 0 };
     }
 }
 
