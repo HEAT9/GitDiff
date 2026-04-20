@@ -37,14 +37,17 @@ export function webviewLabels(locale: Locale): Record<string, string> {
             historyStats:
                 'Commits: {count} · Added lines: {add} · Deleted lines: {del} · Modified lines (est.): {mod}',
             hoverMeta: 'Author: {author} | Date: {date}',
+            commitChangeStats:
+                'This commit changes (est.): +{add} / -{del} / ~{mod}',
             twoTitle: 'Compare two versions',
             twoHint:
-                'Pick one commit on each side: compares the file snapshot at A vs at B, regardless of commits in between.',
+                'When both sides are commits, left must be older and right newer. Both sides support Working tree (uncommitted).',
             colA: 'Left (version A)',
             colB: 'Right (version B)',
             none: 'None',
             picked: 'Selected:',
             btnTwo: 'Compare A and B',
+            workingTree: 'Working tree (uncommitted)',
             count: 'commits',
         };
     }
@@ -69,14 +72,16 @@ export function webviewLabels(locale: Locale): Record<string, string> {
             '点击某条提交：对比内容为「该提交中的本文件」相对「其父提交中的同一文件」的差异（即本次提交对该文件的改动）。',
         historyStats: '提交数：{count} · 新增行：{add} · 删除行：{del} · 修改行（估算）：{mod}',
         hoverMeta: '提交者：{author} | 日期：{date}',
+        commitChangeStats: '本次提交变更（估算）：+{add} / -{del} / ~{mod}',
         twoTitle: '两个历史版本（快照对比）',
         twoHint:
-            '左右各选一条提交：直接对比这两个提交里**该文件内容**的差异，与中间隔了多少个提交无关。',
+            '当两侧都选择历史提交时，要求左侧更旧、右侧更新。左右两侧都支持“工作区（未提交）”。',
         colA: '左侧（版本 A）',
         colB: '右侧（版本 B）',
         none: '未选择',
         picked: '已选：',
         btnTwo: '比较所选两个版本',
+        workingTree: '工作区（未提交）',
         count: '条',
     };
 }
@@ -98,6 +103,10 @@ const opErr = {
     },
     pickBoth: { zh: '请在左右两侧各选择一个版本。', en: 'Pick a revision on both sides.' },
     sameRef: { zh: '左右不能为同一提交。', en: 'Left and right revisions must differ.' },
+    leftMustBeOlderRightNewer: {
+        zh: '当两侧都为历史提交时，左侧版本必须更旧、右侧版本必须更新（左侧应是右侧的历史祖先）。',
+        en: 'When both sides are commits, left must be older and right newer (left must be an ancestor of right).',
+    },
     commitMissingFile: {
         zh: '该提交中不包含此文件（可能在本提交中被删除）。',
         en: 'This commit does not contain this file (it may have been deleted in this commit).',

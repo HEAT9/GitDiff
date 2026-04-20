@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import * as core from './gitCompareCore';
 import * as ops from './compareOperations';
+import { WORKING_TREE_REF } from './compareOperations';
 import { LOCALE_STORAGE_KEY, parseLocale, readLocale, webviewLabels, type Locale } from './i18n';
 
 type WebviewState = {
@@ -335,9 +336,24 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
       });
     }
 
-    function renderSideList(container, commits, col, onPick) {
+    function renderSideList(container, commits, col, onPick, t) {
       container.innerHTML = '';
-      var t = window.__labels || {};
+      if (col === 'L' || col === 'R') {
+        var wr = document.createElement('div');
+        wr.className = 'commit';
+        wr.title = t.workingTree || 'Working tree (uncommitted)';
+        var wsid = document.createElement('span'); wsid.className = 'commit-id'; wsid.textContent = 'WORK';
+        var wss = document.createElement('span'); wss.className = 'commit-sub'; wss.textContent = t.workingTree || 'Working tree (uncommitted)';
+        wr.appendChild(wsid); wr.appendChild(wss);
+        wr.addEventListener('click', function() {
+          Array.prototype.forEach.call(container.querySelectorAll('.commit'), function(x) { x.classList.remove('sel'); });
+          wr.classList.add('sel');
+          onPick('__WORKING_TREE__');
+        });
+        if (col === 'L' && selLeft === '__WORKING_TREE__') wr.classList.add('sel');
+        if (col === 'R' && selRight === '__WORKING_TREE__') wr.classList.add('sel');
+        container.appendChild(wr);
+      }
       (commits || []).forEach(function(c) {
         var row = document.createElement('div');
         row.className = 'commit';
@@ -410,12 +426,12 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
       renderMainList(s.commits);
       renderSideList(el('commitsLeft'), s.commits, 'L', function(id) {
         selLeft = id;
-        el('selLeftHint').textContent = t.picked + id;
-      });
+        el('selLeftHint').textContent = t.picked + (id === '__WORKING_TREE__' ? (t.workingTree || 'Working tree') : id);
+      }, t);
       renderSideList(el('commitsRight'), s.commits, 'R', function(id) {
         selRight = id;
-        el('selRightHint').textContent = t.picked + id;
-      });
+        el('selRightHint').textContent = t.picked + (id === '__WORKING_TREE__' ? (t.workingTree || 'Working tree') : id);
+      }, t);
     }
 
     window.addEventListener('message', function(event) {

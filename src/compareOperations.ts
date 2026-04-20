@@ -11,6 +11,7 @@ import {
 } from './i18n';
 
 export type OpResult = { ok: true } | { ok: false; message: string };
+export const WORKING_TREE_REF = '__WORKING_TREE__';
 
 function shortRef(r: string): string {
     const t = r.trim();
@@ -50,12 +51,22 @@ export async function opCompareCommitVsParent(
     }
     const rightUri = core.gitShowUri(ctx.gitRoot, c, ctx.relPath);
     const pShort = parent ? shortRef(parent) : locale === 'en' ? 'empty' : '空';
+    const stat = await core.fetchCommitFileLineStats(ctx.gitRoot, c, ctx.relPath);
+    const statSuffix =
+        locale === 'en'
+            ? ` +${stat.add}/-${stat.del}/~${stat.mod}`
+            : ` +${stat.add}/-${stat.del}/~${stat.mod}`;
     await core.openGitDiff({
         leftUri,
         rightUri,
-        title: diffTitleCommitIntro(locale, base, pShort, shortRef(c)),
+        title: `${diffTitleCommitIntro(locale, base, pShort, shortRef(c))}${statSuffix}`,
         keepWorktreeFsPath: fsPath,
     });
+    const tip =
+        locale === 'en'
+            ? `This commit changes (est.): +${stat.add} / -${stat.del} / ~${stat.mod}`
+            : `本次提交变更（估算）：+${stat.add} / -${stat.del} / ~${stat.mod}`;
+    void vscode.window.showInformationMessage(tip);
     return { ok: true };
 }
 
@@ -128,22 +139,50 @@ export async function opCompareTwoRefs(
     if (!ctx) {
         return { ok: false, message: opErrMsg(locale, 'notInRepo') };
     }
-    for (const [sideLabel, ref] of [
-        [locale === 'en' ? 'Left' : '左侧', L],
-        [locale === 'en' ? 'Right' : '右侧', R],
-    ] as const) {
-        const ok = await core.verifyBlobExists(ctx.gitRoot, ref, ctx.relPath);
+    const leftIsWorking = L === WORKING_TREE_REF;
+    const rightIsWorking = R === WORKING_TREE_REF;
+    if (!leftIsWorking) {
+        const ok = await core.verifyBlobExists(ctx.gitRoot, L, ctx.relPath);
         if (!ok) {
             return {
                 ok: false,
-                message: opErrMsg(locale, 'sideBlobMissing', { side: sideLabel, ref }),
+                message: opErrMsg(locale, 'sideBlobMissing', {
+                    side: locale === 'en' ? 'Left' : '左侧',
+                    ref: L,
+                }),
             };
         }
     }
+    if (!rightIsWorking) {
+        const ok = await core.verifyBlobExists(ctx.gitRoot, R, ctx.relPath);
+        if (!ok) {
+            return {
+                ok: false,
+                message: opErrMsg(locale, 'sideBlobMissing', {
+                    side: locale === 'en' ? 'Right' : '右侧',
+                    ref: R,
+                }),
+            };
+        }
+    }
+    if (!leftIsWorking && !rightIsWorking) {
+        const leftOlder = await core.isAncestor(ctx.gitRoot, L, R);
+        if (!leftOlder || L === R) {
+            return { ok: false, message: opErrMsg(locale, 'leftMustBeOlderRightNewer') };
+        }
+    }
+    const leftUri = leftIsWorking
+        ? core.snapshotUri(path.basename(fsPath), await core.readWorkingCopy(fsPath))
+        : core.gitShowUri(ctx.gitRoot, L, ctx.relPath);
+    const leftTitleRef = leftIsWorking ? (locale === 'en' ? 'working' : '工作区') : L;
+    const rightUri = rightIsWorking
+        ? core.snapshotUri(path.basename(fsPath), await core.readWorkingCopy(fsPath))
+        : core.gitShowUri(ctx.gitRoot, R, ctx.relPath);
+    const rightTitleRef = rightIsWorking ? (locale === 'en' ? 'working' : '工作区') : R;
     await core.openGitDiff({
-        leftUri: core.gitShowUri(ctx.gitRoot, L, ctx.relPath),
-        rightUri: core.gitShowUri(ctx.gitRoot, R, ctx.relPath),
-        title: diffTitleTwoSnapshots(locale, path.basename(fsPath), L, R),
+        leftUri,
+        rightUri,
+        title: diffTitleTwoSnapshots(locale, path.basename(fsPath), leftTitleRef, rightTitleRef),
         keepWorktreeFsPath: fsPath,
     });
     return { ok: true };

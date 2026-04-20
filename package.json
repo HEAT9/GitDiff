@@ -2,7 +2,7 @@
   "name": "gitdiff",
   "displayName": "GitDiff",
   "description": "GitDiff：侧栏随当前文件展示历史，点提交对比该提交相对父提交的改动；双列对比两版文件快照。中/英界面，可选 GitLab 风格差异主题。",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "publisher": "local-dev",
   "icon": "media/gtdiff-icon.png",
   "license": "MIT",

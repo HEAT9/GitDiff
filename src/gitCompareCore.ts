@@ -219,6 +219,63 @@ export async function fetchFileHistoryStats(
     }
 }
 
+/** 判断 older 是否是 newer 的祖先（含相等）；用于版本先后校验 */
+export async function isAncestor(
+    gitRoot: string,
+    older: string,
+    newer: string
+): Promise<boolean> {
+    try {
+        await runGit(gitRoot, ['merge-base', '--is-ancestor', older, newer]);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/** 统计单个提交中某文件的行级增删改估算 */
+export async function fetchCommitFileLineStats(
+    gitRoot: string,
+    commit: string,
+    relPath: string
+): Promise<{ add: number; del: number; mod: number }> {
+    try {
+        const { stdout } = await runGit(gitRoot, [
+            'show',
+            '--numstat',
+            '--pretty=format:',
+            `${commit}^!`,
+            '--',
+            relPath,
+        ]);
+        let add = 0;
+        let del = 0;
+        let mod = 0;
+        for (const raw of stdout.split('\n')) {
+            const line = raw.trim();
+            if (!line) {
+                continue;
+            }
+            const parts = line.split('\t');
+            if (parts.length < 3) {
+                continue;
+            }
+            const a = Number(parts[0]);
+            const d = Number(parts[1]);
+            if (!Number.isFinite(a) || !Number.isFinite(d)) {
+                continue;
+            }
+            const m = Math.min(a, d);
+            mod += m;
+            add += a - m;
+            del += d - m;
+        }
+        return { add, del, mod };
+    } catch {
+        return { add: 0, del: 0, mod: 0 };
+    }
+}
+
 export async function readWorkingCopy(fsPath: string): Promise<string> {
     const editor = vscode.window.visibleTextEditors.find(
         (e) => e.document.uri.scheme === 'file' && e.document.uri.fsPath === fsPath
