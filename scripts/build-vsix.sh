@@ -2,7 +2,16 @@
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-npm run compile
+if command -v npm >/dev/null 2>&1; then
+  npm run compile
+else
+  NODE_CLI="${NODE_CLI:-$(command -v node || true)}"
+  if [ -z "$NODE_CLI" ]; then
+    echo "Neither npm nor node in PATH; cannot compile." >&2
+    exit 1
+  fi
+  "$NODE_CLI" "$ROOT/node_modules/typescript/bin/tsc" -p "$ROOT/"
+fi
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE/extension"

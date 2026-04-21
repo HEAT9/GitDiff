@@ -1,9 +1,35 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import * as core from './gitCompareCore';
 import * as ops from './compareOperations';
 import { WORKING_TREE_REF } from './compareOperations';
 import { LOCALE_STORAGE_KEY, parseLocale, readLocale, webviewLabels, type Locale } from './i18n';
+
+function fsPathsEquivalent(a: string, b: string): boolean {
+    const na = path.normalize(a);
+    const nb = path.normalize(b);
+    if (na === nb) {
+        return true;
+    }
+    if (process.platform === 'win32' && na.toLowerCase() === nb.toLowerCase()) {
+        return true;
+    }
+    try {
+        const resolve = fs.realpathSync.native ?? fs.realpathSync;
+        const ra = resolve(na);
+        const rb = resolve(nb);
+        if (ra === rb) {
+            return true;
+        }
+        if (process.platform === 'win32' && ra.toLowerCase() === rb.toLowerCase()) {
+            return true;
+        }
+    } catch {
+        /* 文件暂不存在等 */
+    }
+    return false;
+}
 
 type WebviewState = {
     effectivePath: string | null;
@@ -13,6 +39,8 @@ type WebviewState = {
     repoLabel: string;
     commits: { id: string; subject: string; author: string; date: string }[];
     stats: { add: number; del: number; mod: number };
+    /** 历史列表与快照比较是否显示「工作区（未提交）」：相对 HEAD 有改动时为 true（基于磁盘与索引） */
+    showWorkingTreeInSnapshot: boolean;
     hint: string | null;
     locale: Locale;
     strings: Record<string, string>;
@@ -24,6 +52,9 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
     private _view: vscode.WebviewView | undefined;
     private _pinnedFsPath: string | undefined;
     private _pushTimer: ReturnType<typeof setTimeout> | undefined;
+    private _effFsWatcher: vscode.FileSystemWatcher | undefined;
+    private _watchedEffPath: string | undefined;
+    private _afterSavePushTimer: ReturnType<typeof setTimeout> | undefined;
 
     constructor(private readonly _ctx: vscode.ExtensionContext) {}
 
@@ -75,6 +106,18 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
                             return;
                         }
                         const r = await ops.opCompareCommitVsParent(p, msg.ref ?? '', locale);
+                        await ops.showOpError(r, locale);
+                        break;
+                    }
+                    case 'compareWorkingVsHead': {
+                        const p = this._effectivePath();
+                        const locale = readLocale(this._ctx);
+                        const L = webviewLabels(locale);
+                        if (!p) {
+                            void vscode.window.showWarningMessage(L.warnOpenFile);
+                            return;
+                        }
+                        const r = await ops.opCompareWithHead(p, locale);
                         await ops.showOpError(r, locale);
                         break;
                     }
@@ -139,6 +182,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
                 repoLabel: '',
                 commits: [],
                 stats: { add: 0, del: 0, mod: 0 },
+                showWorkingTreeInSnapshot: false,
                 hint: str.hintOpen,
                 locale,
                 strings: str,
@@ -154,6 +198,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
                 repoLabel: '',
                 commits: [],
                 stats: { add: 0, del: 0, mod: 0 },
+                showWorkingTreeInSnapshot: false,
                 hint: str.hintNotRepo,
                 locale,
                 strings: str,
@@ -161,6 +206,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
         }
         const commits = await core.fetchRecentCommits(ctx.gitRoot, ctx.relPath, 80);
         const stats = await core.fetchFileHistoryStats(ctx.gitRoot, ctx.relPath, 80);
+        const showWorkingTreeInSnapshot = await core.hasUncommittedChanges(ctx.gitRoot, ctx.relPath);
         return {
             effectivePath: effective,
             pinnedPath: this._pinnedFsPath ?? null,
@@ -169,6 +215,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
             repoLabel: ctx.gitRoot,
             commits,
             stats,
+            showWorkingTreeInSnapshot,
             hint: null,
             locale,
             strings: str,
@@ -180,16 +227,77 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
             return;
         }
         const s = await this._buildState();
+        this._syncEffFileWatcher(s.effectivePath);
         void this._view.webview.postMessage({ type: 'state', payload: s });
+    }
+
+    /** 当前关注文件在磁盘上被改写（含外部/git 还原）时刷新侧栏 Git 状态 */
+    private _syncEffFileWatcher(effectivePath: string | null): void {
+        const eff = effectivePath ?? undefined;
+        if (this._watchedEffPath === eff) {
+            return;
+        }
+        this._effFsWatcher?.dispose();
+        this._effFsWatcher = undefined;
+        this._watchedEffPath = eff;
+        if (!eff) {
+            return;
+        }
+        try {
+            const w = vscode.workspace.createFileSystemWatcher(
+                new vscode.RelativePattern(vscode.Uri.file(path.dirname(eff)), path.basename(eff))
+            );
+            const bump = () => this.schedulePushState();
+            w.onDidChange(bump);
+            w.onDidCreate(bump);
+            w.onDidDelete(bump);
+            this._effFsWatcher = w;
+        } catch {
+            /* RelativePattern 在极少数路径下可能失败，忽略即可 */
+        }
+    }
+
+    /** 保存/编辑事件里的路径可能与 `_effectivePath()` 在符号链接、规范化、盘符大小写上不一致 */
+    private _isEventForEffectivePath(uri: vscode.Uri): boolean {
+        if (uri.scheme !== 'file') {
+            return false;
+        }
+        const eff = this._effectivePath();
+        return !!eff && fsPathsEquivalent(eff, uri.fsPath);
+    }
+
+    /** 保存后稍晚再拉 Git 状态，避免编辑器刚落盘时 git 仍读到旧内容 */
+    private _schedulePushStateAfterSave(): void {
+        if (this._afterSavePushTimer) {
+            clearTimeout(this._afterSavePushTimer);
+        }
+        this._afterSavePushTimer = setTimeout(() => {
+            this._afterSavePushTimer = undefined;
+            void this._pushState();
+        }, 80);
     }
 
     registerWindowListeners(context: vscode.ExtensionContext): void {
         context.subscriptions.push(
             vscode.window.onDidChangeActiveTextEditor(() => this.schedulePushState()),
             vscode.workspace.onDidChangeTextDocument((e) => {
-                if (e.document.uri.scheme === 'file') {
+                if (this._isEventForEffectivePath(e.document.uri)) {
                     this.schedulePushState();
                 }
+            }),
+            vscode.workspace.onDidSaveTextDocument((doc) => {
+                if (this._isEventForEffectivePath(doc.uri)) {
+                    this._schedulePushStateAfterSave();
+                }
+            }),
+            new vscode.Disposable(() => {
+                if (this._afterSavePushTimer) {
+                    clearTimeout(this._afterSavePushTimer);
+                    this._afterSavePushTimer = undefined;
+                }
+                this._effFsWatcher?.dispose();
+                this._effFsWatcher = undefined;
+                this._watchedEffPath = undefined;
             })
         );
     }
@@ -315,10 +423,22 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
       el('btnTwo').textContent = t.btnTwo;
     }
 
-    function renderMainList(commits) {
+    function renderMainList(commits, showWork) {
       var box = el('commitsMain');
       box.innerHTML = '';
       var t = window.__labels || {};
+      if (showWork) {
+        var wr = document.createElement('div');
+        wr.className = 'commit';
+        wr.title = t.workingTree || 'Working tree (uncommitted)';
+        var wsid = document.createElement('span'); wsid.className = 'commit-id'; wsid.textContent = 'WORK';
+        var wss = document.createElement('span'); wss.className = 'commit-sub'; wss.textContent = t.workingTree || 'Working tree (uncommitted)';
+        wr.appendChild(wsid); wr.appendChild(wss);
+        wr.addEventListener('click', function() {
+          vscode.postMessage({ type: 'compareWorkingVsHead' });
+        });
+        box.appendChild(wr);
+      }
       (commits || []).forEach(function(c) {
         var row = document.createElement('div');
         row.className = 'commit';
@@ -336,9 +456,9 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
       });
     }
 
-    function renderSideList(container, commits, col, onPick, t) {
+    function renderSideList(container, commits, col, onPick, t, showWork) {
       container.innerHTML = '';
-      if (col === 'L' || col === 'R') {
+      if ((col === 'L' || col === 'R') && showWork) {
         var wr = document.createElement('div');
         wr.className = 'commit';
         wr.title = t.workingTree || 'Working tree (uncommitted)';
@@ -415,23 +535,24 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
       hint.textContent = s.hint || '';
       btnClear.style.display = s.pinnedPath ? 'inline-block' : 'none';
 
-      var n = (s.commits || []).length;
+      var sw = !!s.showWorkingTreeInSnapshot;
+      var n = (s.commits || []).length + (sw ? 1 : 0);
       pillHist.textContent = String(n);
       histStats.textContent = (t.historyStats || 'Commits: {count} · Added: {add} · Deleted: {del} · Modified: {mod}')
-        .replace('{count}', String(n))
+        .replace('{count}', String((s.commits || []).length))
         .replace('{add}', String((s.stats && s.stats.add) || 0))
         .replace('{del}', String((s.stats && s.stats.del) || 0))
         .replace('{mod}', String((s.stats && s.stats.mod) || 0));
 
-      renderMainList(s.commits);
+      renderMainList(s.commits, sw);
       renderSideList(el('commitsLeft'), s.commits, 'L', function(id) {
         selLeft = id;
         el('selLeftHint').textContent = t.picked + (id === '__WORKING_TREE__' ? (t.workingTree || 'Working tree') : id);
-      }, t);
+      }, t, sw);
       renderSideList(el('commitsRight'), s.commits, 'R', function(id) {
         selRight = id;
         el('selRightHint').textContent = t.picked + (id === '__WORKING_TREE__' ? (t.workingTree || 'Working tree') : id);
-      }, t);
+      }, t, sw);
     }
 
     window.addEventListener('message', function(event) {

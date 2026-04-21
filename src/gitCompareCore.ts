@@ -101,6 +101,34 @@ export async function verifyBlobExists(
     }
 }
 
+/** 文件是否已被 Git 跟踪 */
+export async function isPathTracked(gitRoot: string, relPath: string): Promise<boolean> {
+    try {
+        await runGit(gitRoot, ['ls-files', '--error-unmatch', '--', relPath]);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * 相对 HEAD，工作区/暂存区是否有变化（含未暂存与已暂存）。
+ * 使用 `git diff HEAD` 而非 `diff-index`：后者依赖索引 stat，在保存后偶发仍判为「有改动」。
+ * 未跟踪文件视为「有本地内容」，快照比较仍可提供工作区项。
+ */
+export async function hasUncommittedChanges(gitRoot: string, relPath: string): Promise<boolean> {
+    const tracked = await isPathTracked(gitRoot, relPath);
+    if (!tracked) {
+        return true;
+    }
+    try {
+        await runGit(gitRoot, ['diff', '--quiet', 'HEAD', '--', relPath]);
+        return false;
+    } catch {
+        return true;
+    }
+}
+
 /** 解析提交的第一父提交（merge 取第一父；根提交返回 undefined） */
 export async function resolveFirstParentRef(
     gitRoot: string,

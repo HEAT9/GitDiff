@@ -33,7 +33,7 @@ export function webviewLabels(locale: Locale): Record<string, string> {
             hintNotRepo: 'Not inside a Git repository, or outside the repo root.',
             historyTitle: 'History (this file)',
             historyHint:
-                'Click a commit: diff is this file at the parent vs at this commit (the change introduced by that commit).',
+                'If the file has uncommitted changes vs HEAD, the first row compares HEAD with your working copy. Click a commit: diff is this file at the parent vs at this commit (the change introduced by that commit).',
             historyStats:
                 'Commits: {count} · Added lines: {add} · Deleted lines: {del} · Modified lines (est.): {mod}',
             hoverMeta: 'Author: {author} | Date: {date}',
@@ -69,7 +69,7 @@ export function webviewLabels(locale: Locale): Record<string, string> {
         hintNotRepo: '当前文件不在 Git 仓库内，或不在仓库根目录之下。',
         historyTitle: '本文件修改历史',
         historyHint:
-            '点击某条提交：对比内容为「该提交中的本文件」相对「其父提交中的同一文件」的差异（即本次提交对该文件的改动）。',
+            '若相对 HEAD 有未保存到提交的改动，列表首行可对比 HEAD 与工作区。点击某条提交：对比「该提交中的本文件」相对「其父提交」的差异（即本次提交对该文件的改动）。',
         historyStats: '提交数：{count} · 新增行：{add} · 删除行：{del} · 修改行（估算）：{mod}',
         hoverMeta: '提交者：{author} | 日期：{date}',
         commitChangeStats: '本次提交变更（估算）：+{add} / -{del} / ~{mod}',
