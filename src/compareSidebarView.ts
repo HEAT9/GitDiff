@@ -31,6 +31,25 @@ function fsPathsEquivalent(a: string, b: string): boolean {
     return false;
 }
 
+function resolveGitDir(gitRoot: string): string {
+    const dotGit = path.join(gitRoot, '.git');
+    try {
+        const st = fs.statSync(dotGit);
+        if (st.isDirectory()) {
+            return dotGit;
+        }
+        const raw = fs.readFileSync(dotGit, 'utf8');
+        const m = raw.match(/gitdir:\s*(.+)\s*$/i);
+        if (m?.[1]) {
+            const p = m[1].trim();
+            return path.isAbsolute(p) ? p : path.resolve(gitRoot, p);
+        }
+    } catch {
+        /* fall through */
+    }
+    return dotGit;
+}
+
 type WebviewState = {
     effectivePath: string | null;
     pinnedPath: string | null;
@@ -38,6 +57,8 @@ type WebviewState = {
     relPath: string;
     repoLabel: string;
     commits: { id: string; subject: string; author: string; date: string }[];
+    /** 与当前文件同一仓库的最近提交（不限定单文件），用于可折叠「改动文件」列表 */
+    repoCommits: { id: string; subject: string; author: string; date: string }[];
     stats: { add: number; del: number; mod: number };
     /** 历史列表与快照比较是否显示「工作区（未提交）」：相对 HEAD 有改动时为 true（基于磁盘与索引） */
     showWorkingTreeInSnapshot: boolean;
@@ -55,6 +76,9 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
     private _effFsWatcher: vscode.FileSystemWatcher | undefined;
     private _watchedEffPath: string | undefined;
     private _afterSavePushTimer: ReturnType<typeof setTimeout> | undefined;
+    private _gitMetaWatchers: vscode.FileSystemWatcher[] = [];
+    private _watchedGitRoot: string | undefined;
+    private _autoRefreshTimer: ReturnType<typeof setInterval> | undefined;
 
     constructor(private readonly _ctx: vscode.ExtensionContext) {}
 
@@ -66,7 +90,14 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
         webviewView.webview.html = this._html();
 
         webviewView.webview.onDidReceiveMessage(
-            async (msg: { type: string; locale?: string; ref?: string; left?: string; right?: string }) => {
+            async (msg: {
+                type: string;
+                locale?: string;
+                ref?: string;
+                left?: string;
+                right?: string;
+                files?: string[];
+            }) => {
                 switch (msg.type) {
                     case 'mounted':
                     case 'refresh':
@@ -133,6 +164,20 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
                         await ops.showOpError(r, locale);
                         break;
                     }
+                    case 'fetchCommitFiles': {
+                        const ref = typeof msg.ref === 'string' ? msg.ref.trim() : '';
+                        if (!/^[a-fA-F0-9]{4,64}$/.test(ref)) {
+                            return;
+                        }
+                        const p = this._effectivePath();
+                        if (!p || !this._view) {
+                            return;
+                        }
+                        const ctx = await core.getGitContext(p, { silent: true });
+                        const files = ctx ? await core.fetchCommitChangedPaths(ctx.gitRoot, ref) : [];
+                        void this._view.webview.postMessage({ type: 'commitFiles', ref, files });
+                        break;
+                    }
                     default:
                         break;
                 }
@@ -140,12 +185,32 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
         );
 
         webviewView.onDidChangeVisibility(() => {
+            this._syncAutoRefreshLoop();
             if (webviewView.visible) {
                 void this._pushState();
             }
         });
 
+        this._syncAutoRefreshLoop();
         void this._pushState();
+    }
+
+    /** 兜底：侧栏可见时定时刷新，覆盖未被监听到的 git 提交事件 */
+    private _syncAutoRefreshLoop(): void {
+        const shouldRun = !!this._view?.visible;
+        if (!shouldRun) {
+            if (this._autoRefreshTimer) {
+                clearInterval(this._autoRefreshTimer);
+                this._autoRefreshTimer = undefined;
+            }
+            return;
+        }
+        if (this._autoRefreshTimer) {
+            return;
+        }
+        this._autoRefreshTimer = setInterval(() => {
+            this.schedulePushState();
+        }, 60 * 60 * 1000);
     }
 
     public schedulePushState(): void {
@@ -181,6 +246,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
                 relPath: '',
                 repoLabel: '',
                 commits: [],
+                repoCommits: [],
                 stats: { add: 0, del: 0, mod: 0 },
                 showWorkingTreeInSnapshot: false,
                 hint: str.hintOpen,
@@ -197,6 +263,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
                 relPath: '',
                 repoLabel: '',
                 commits: [],
+                repoCommits: [],
                 stats: { add: 0, del: 0, mod: 0 },
                 showWorkingTreeInSnapshot: false,
                 hint: str.hintNotRepo,
@@ -205,6 +272,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
             };
         }
         const commits = await core.fetchRecentCommits(ctx.gitRoot, ctx.relPath, 80);
+        const repoCommits = await core.fetchRecentRepoCommits(ctx.gitRoot, 50);
         const stats = await core.fetchFileHistoryStats(ctx.gitRoot, ctx.relPath, 80);
         const showWorkingTreeInSnapshot = await core.hasUncommittedChanges(ctx.gitRoot, ctx.relPath);
         return {
@@ -214,6 +282,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
             relPath: ctx.relPath,
             repoLabel: ctx.gitRoot,
             commits,
+            repoCommits,
             stats,
             showWorkingTreeInSnapshot,
             hint: null,
@@ -228,7 +297,40 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
         }
         const s = await this._buildState();
         this._syncEffFileWatcher(s.effectivePath);
+        this._syncGitMetaWatchers(s.repoLabel || null);
         void this._view.webview.postMessage({ type: 'state', payload: s });
+    }
+
+    /** 监听仓库元数据变化（提交/切分支等）后刷新，确保能看到最新提交记录 */
+    private _syncGitMetaWatchers(gitRoot: string | null): void {
+        const root = gitRoot && gitRoot.trim() ? gitRoot.trim() : undefined;
+        if (this._watchedGitRoot === root) {
+            return;
+        }
+        for (const w of this._gitMetaWatchers) {
+            w.dispose();
+        }
+        this._gitMetaWatchers = [];
+        this._watchedGitRoot = root;
+        if (!root) {
+            return;
+        }
+        const bump = () => this.schedulePushState();
+        try {
+            const gitDir = resolveGitDir(root);
+            const patterns = ['HEAD', 'index', 'packed-refs', 'refs/heads/**', 'logs/HEAD'];
+            for (const p of patterns) {
+                const w = vscode.workspace.createFileSystemWatcher(
+                    new vscode.RelativePattern(vscode.Uri.file(gitDir), p)
+                );
+                w.onDidChange(bump);
+                w.onDidCreate(bump);
+                w.onDidDelete(bump);
+                this._gitMetaWatchers.push(w);
+            }
+        } catch {
+            /* 忽略：仓库结构异常时仍可手动刷新 */
+        }
     }
 
     /** 当前关注文件在磁盘上被改写（含外部/git 还原）时刷新侧栏 Git 状态 */
@@ -280,6 +382,11 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
     registerWindowListeners(context: vscode.ExtensionContext): void {
         context.subscriptions.push(
             vscode.window.onDidChangeActiveTextEditor(() => this.schedulePushState()),
+            vscode.window.onDidChangeWindowState((e) => {
+                if (e.focused) {
+                    this.schedulePushState();
+                }
+            }),
             vscode.workspace.onDidChangeTextDocument((e) => {
                 if (this._isEventForEffectivePath(e.document.uri)) {
                     this.schedulePushState();
@@ -298,6 +405,15 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
                 this._effFsWatcher?.dispose();
                 this._effFsWatcher = undefined;
                 this._watchedEffPath = undefined;
+                for (const w of this._gitMetaWatchers) {
+                    w.dispose();
+                }
+                this._gitMetaWatchers = [];
+                this._watchedGitRoot = undefined;
+                if (this._autoRefreshTimer) {
+                    clearInterval(this._autoRefreshTimer);
+                    this._autoRefreshTimer = undefined;
+                }
             })
         );
     }
@@ -352,6 +468,15 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
     .col .commits { max-height: 200px; }
     .sel-hint { font-size: 10px; color: var(--muted); margin-top: 4px; min-height: 2em; word-break: break-all; }
     .lang-label { font-size: 11px; color: var(--muted); margin-right: 4px; }
+    .repo-wrap { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 2px; }
+    .repo-acc { border-bottom: 1px solid var(--border); }
+    .repo-acc:last-child { border-bottom: none; }
+    .repo-acc-head { display: flex; gap: 6px; align-items: flex-start; cursor: pointer; padding: 5px 8px; font-size: 11px; box-sizing: border-box; }
+    .repo-acc-head:hover { background: var(--vscode-list-hoverBackground); }
+    .repo-acc-chev { flex: 0 0 14px; color: var(--muted); user-select: none; font-size: 10px; line-height: 1.5; }
+    .repo-acc-body { display: none; padding: 0 8px 8px 28px; }
+    .repo-acc-open .repo-acc-body { display: block; }
+    .repo-file-line { font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--fg); padding: 3px 0; word-break: break-all; line-height: 1.35; }
   </style>
 </head>
 <body>
@@ -376,6 +501,15 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
     <p id="histHint" class="hint"></p>
     <p id="histStats" class="stats"></p>
     <div id="commitsMain" class="commits"></div>
+  </div>
+
+  <div class="section">
+    <h1><span id="tRepo">仓库最近提交</span> <span class="pill" id="pillRepo">0</span> <span class="pill" id="pillRepoUnit">条</span></h1>
+    <p id="repoHint" class="hint"></p>
+    <div class="row">
+      <button type="button" class="secondary small" id="btnAutoRefresh">自动刷新</button>
+    </div>
+    <div id="repoList" class="repo-wrap"></div>
   </div>
 
   <div class="section">
@@ -411,6 +545,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
       el('btnLangEn').textContent = t.en;
       el('tFile').textContent = t.fileTitle;
       el('btnRefresh').textContent = t.refresh;
+      el('btnAutoRefresh').textContent = t.autoRefreshNow || t.refresh;
       el('btnPick').textContent = t.pickFile;
       el('btnClearPin').textContent = t.followEditor;
       el('tHist').textContent = t.historyTitle;
@@ -421,6 +556,100 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
       el('tColA').textContent = t.colA;
       el('tColB').textContent = t.colB;
       el('btnTwo').textContent = t.btnTwo;
+      el('tRepo').textContent = t.repoCommitsTitle || 'Repo commits';
+      el('pillRepoUnit').textContent = t.repoCommitsUnit || t.count || '';
+      el('repoHint').textContent = t.repoCommitsHint || '';
+    }
+
+    var repoFileCache = Object.create(null);
+
+    function fillRepoCommitBody(body, files) {
+      var t = window.__labels || {};
+      body.innerHTML = '';
+      if (!files || !files.length) {
+        var empty = document.createElement('p');
+        empty.className = 'hint';
+        empty.style.margin = '4px 0 0 0';
+        empty.textContent = t.repoCommitsEmpty || '—';
+        body.appendChild(empty);
+        return;
+      }
+      files.forEach(function(fp) {
+        var line = document.createElement('div');
+        line.className = 'repo-file-line';
+        line.textContent = fp;
+        body.appendChild(line);
+      });
+    }
+
+    function onCommitFiles(ref, files) {
+      if (!ref) return;
+      repoFileCache[ref] = files;
+      var box = el('repoList');
+      if (!box) return;
+      var wrap = box.querySelector('.repo-acc[data-ref="' + ref + '"]');
+      if (!wrap) return;
+      wrap.removeAttribute('data-pending');
+      var body = wrap.querySelector('.repo-acc-body');
+      if (!body) return;
+      fillRepoCommitBody(body, files);
+    }
+
+    function renderRepoList(repoCommits) {
+      var box = el('repoList');
+      if (!box) return;
+      box.innerHTML = '';
+      repoFileCache = Object.create(null);
+      var t = window.__labels || {};
+      (repoCommits || []).forEach(function(c) {
+        var wrap = document.createElement('div');
+        wrap.className = 'repo-acc';
+        wrap.setAttribute('data-ref', c.id);
+        var head = document.createElement('div');
+        head.className = 'repo-acc-head';
+        var chev = document.createElement('span');
+        chev.className = 'repo-acc-chev';
+        chev.textContent = '▶';
+        var sid = document.createElement('span');
+        sid.className = 'commit-id';
+        sid.style.flex = '0 0 52px';
+        sid.textContent = c.id;
+        var sub = document.createElement('span');
+        sub.className = 'commit-sub';
+        sub.textContent = c.subject || '';
+        head.appendChild(chev);
+        head.appendChild(sid);
+        head.appendChild(sub);
+        var body = document.createElement('div');
+        body.className = 'repo-acc-body';
+        head.addEventListener('click', function(ev) {
+          ev.preventDefault();
+          var open = !wrap.classList.contains('repo-acc-open');
+          if (open) {
+            wrap.classList.add('repo-acc-open');
+            chev.textContent = '▼';
+            if (repoFileCache[c.id]) {
+              fillRepoCommitBody(body, repoFileCache[c.id]);
+            } else if (!wrap.getAttribute('data-pending')) {
+              wrap.setAttribute('data-pending', '1');
+              body.innerHTML = '';
+              var ld = document.createElement('p');
+              ld.className = 'hint';
+              ld.style.margin = '4px 0 0 0';
+              ld.textContent = t.repoCommitsLoading || '…';
+              body.appendChild(ld);
+              vscode.postMessage({ type: 'fetchCommitFiles', ref: c.id });
+            }
+          } else {
+            wrap.classList.remove('repo-acc-open');
+            chev.textContent = '▶';
+          }
+        });
+        head.title = (t.hoverMeta || '').replace('{author}', c.author || '').replace('{date}', c.date || '');
+        wrap.appendChild(head);
+        wrap.appendChild(body);
+        box.appendChild(wrap);
+      });
     }
 
     function renderMainList(commits, showWork) {
@@ -510,6 +739,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
       var btnClear = el('btnClearPin');
       var pillHist = el('pillHist');
       var histStats = el('histStats');
+      var pillRepo = el('pillRepo');
 
       selLeft = ''; selRight = '';
       el('selLeftHint').textContent = t.none;
@@ -526,6 +756,8 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
         el('commitsLeft').innerHTML = '';
         el('commitsRight').innerHTML = '';
         histStats.textContent = '';
+        if (pillRepo) pillRepo.textContent = '0';
+        if (el('repoList')) el('repoList').innerHTML = '';
         return;
       }
 
@@ -545,6 +777,9 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
         .replace('{mod}', String((s.stats && s.stats.mod) || 0));
 
       renderMainList(s.commits, sw);
+      if (pillRepo) pillRepo.textContent = String((s.repoCommits || []).length);
+      renderRepoList(s.repoCommits || []);
+
       renderSideList(el('commitsLeft'), s.commits, 'L', function(id) {
         selLeft = id;
         el('selLeftHint').textContent = t.picked + (id === '__WORKING_TREE__' ? (t.workingTree || 'Working tree') : id);
@@ -559,6 +794,8 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
       var msg = event.data;
       if (msg && msg.type === 'state' && msg.payload) {
         setState(msg.payload);
+      } else if (msg && msg.type === 'commitFiles') {
+        onCommitFiles(msg.ref, msg.files || []);
       }
     });
 
@@ -567,6 +804,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
     el('btnPick').addEventListener('click', function() { vscode.postMessage({ type: 'pickFile' }); });
     el('btnClearPin').addEventListener('click', function() { vscode.postMessage({ type: 'clearPin' }); });
     el('btnRefresh').addEventListener('click', function() { vscode.postMessage({ type: 'refresh' }); });
+    el('btnAutoRefresh').addEventListener('click', function() { vscode.postMessage({ type: 'refresh' }); });
     el('btnTwo').addEventListener('click', function() {
       vscode.postMessage({ type: 'compareTwo', left: selLeft, right: selRight });
     });

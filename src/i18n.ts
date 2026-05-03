@@ -24,6 +24,7 @@ export function webviewLabels(locale: Locale): Record<string, string> {
             pinFixed: 'Pinned file',
             pinFollow: 'From active editor',
             refresh: 'Refresh',
+            autoRefreshNow: 'Auto refresh now',
             pickFile: 'Choose file…',
             allFiles: 'All files',
             chooseFileOpen: 'Choose file',
@@ -49,6 +50,12 @@ export function webviewLabels(locale: Locale): Record<string, string> {
             btnTwo: 'Compare A and B',
             workingTree: 'Working tree (uncommitted)',
             count: 'commits',
+            repoCommitsTitle: 'Recent commits (repo)',
+            repoCommitsHint:
+                'Click a row to expand or collapse. Lists file paths changed in that commit (names only). Uses the same Git repo as the file above.',
+            repoCommitsLoading: 'Loading…',
+            repoCommitsEmpty: 'No commits.',
+            repoCommitsUnit: 'commits',
         };
     }
     return {
@@ -60,6 +67,7 @@ export function webviewLabels(locale: Locale): Record<string, string> {
         pinFixed: '已固定文件',
         pinFollow: '来自活动编辑器',
         refresh: '刷新',
+        autoRefreshNow: '自动刷新',
         pickFile: '改选文件…',
         allFiles: '所有文件',
         chooseFileOpen: '选择文件',
@@ -83,6 +91,12 @@ export function webviewLabels(locale: Locale): Record<string, string> {
         btnTwo: '比较所选两个版本',
         workingTree: '工作区（未提交）',
         count: '条',
+        repoCommitsTitle: '仓库最近提交',
+        repoCommitsHint:
+            '点击一行可展开或收起，查看该提交改动的文件路径（仅文件名，不含具体改动）。与上方当前文件使用同一 Git 仓库，不影响本文件历史与快照对比。',
+        repoCommitsLoading: '加载中…',
+        repoCommitsEmpty: '无提交记录。',
+        repoCommitsUnit: '条',
     };
 }
 

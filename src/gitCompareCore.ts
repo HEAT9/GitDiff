@@ -173,6 +173,51 @@ export async function fetchRecentCommits(
     }
 }
 
+/** 仓库级最近提交（不限定路径），用于侧栏「提交改动文件」列表 */
+export async function fetchRecentRepoCommits(
+    gitRoot: string,
+    limit: number
+): Promise<{ id: string; subject: string; author: string; date: string }[]> {
+    try {
+        const { stdout } = await runGit(gitRoot, [
+            'log',
+            '-n',
+            String(limit),
+            '--pretty=format:%h%x09%s%x09%an%x09%at',
+        ]);
+        return stdout
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => {
+                const parts = line.split('\t');
+                const id = parts[0] ?? '';
+                const subject = parts[1] ?? '';
+                const author = parts[2] ?? '';
+                const date = formatUnixTs(parts[3] ?? '');
+                return { id, subject, author, date };
+            });
+    } catch {
+        return [];
+    }
+}
+
+/** 某次提交变更的文件路径列表（仅路径，不含 diff 内容） */
+export async function fetchCommitChangedPaths(gitRoot: string, commit: string): Promise<string[]> {
+    const c = commit.trim();
+    if (!c) {
+        return [];
+    }
+    try {
+        const { stdout } = await runGit(gitRoot, ['diff-tree', '--no-commit-id', '--name-only', '-r', c]);
+        return stdout
+            .split('\n')
+            .map((s) => s.trim())
+            .filter(Boolean);
+    } catch {
+        return [];
+    }
+}
+
 function pad2(n: number): string {
     return n < 10 ? `0${n}` : String(n);
 }
