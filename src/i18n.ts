@@ -56,6 +56,7 @@ export function webviewLabels(locale: Locale): Record<string, string> {
             repoCommitsLoading: 'Loading…',
             repoCommitsEmpty: 'No commits.',
             repoCommitsUnit: 'commits',
+            lineBlameColors: 'Line blame colors…',
         };
     }
     return {
@@ -97,6 +98,7 @@ export function webviewLabels(locale: Locale): Record<string, string> {
         repoCommitsLoading: '加载中…',
         repoCommitsEmpty: '无提交记录。',
         repoCommitsUnit: '条',
+        lineBlameColors: '行 blame 颜色…',
     };
 }
 

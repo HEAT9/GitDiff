@@ -109,6 +109,10 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
                         await this._pushState();
                         break;
                     }
+                    case 'openLineBlameColors': {
+                        await vscode.commands.executeCommand('gitdiff.openLineBlameColorUI');
+                        break;
+                    }
                     case 'pickFile': {
                         const locale = readLocale(this._ctx);
                         const L = webviewLabels(locale);
@@ -468,6 +472,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
     .col .commits { max-height: 200px; }
     .sel-hint { font-size: 10px; color: var(--muted); margin-top: 4px; min-height: 2em; word-break: break-all; }
     .lang-label { font-size: 11px; color: var(--muted); margin-right: 4px; }
+    .lang-sep { color: var(--muted); user-select: none; font-size: 11px; padding: 0 4px; }
     .repo-wrap { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 2px; }
     .repo-acc { border-bottom: 1px solid var(--border); }
     .repo-acc:last-child { border-bottom: none; }
@@ -484,6 +489,8 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
     <span class="lang-label" id="lblLang">语言</span>
     <button type="button" class="secondary small" id="btnLangZh">中文</button>
     <button type="button" class="secondary small" id="btnLangEn">English</button>
+    <span class="lang-sep" aria-hidden="true">|</span>
+    <button type="button" class="secondary small" id="btnLineBlameColors">行 blame 颜色…</button>
   </div>
 
   <h1 id="tFile">当前文件</h1>
@@ -543,6 +550,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
       el('lblLang').textContent = t.lang;
       el('btnLangZh').textContent = t.zh;
       el('btnLangEn').textContent = t.en;
+      el('btnLineBlameColors').textContent = t.lineBlameColors || '…';
       el('tFile').textContent = t.fileTitle;
       el('btnRefresh').textContent = t.refresh;
       el('btnAutoRefresh').textContent = t.autoRefreshNow || t.refresh;
@@ -801,6 +809,7 @@ export class CompareSidebarViewProvider implements vscode.WebviewViewProvider {
 
     el('btnLangZh').addEventListener('click', function() { vscode.postMessage({ type: 'setLocale', locale: 'zh' }); });
     el('btnLangEn').addEventListener('click', function() { vscode.postMessage({ type: 'setLocale', locale: 'en' }); });
+    el('btnLineBlameColors').addEventListener('click', function() { vscode.postMessage({ type: 'openLineBlameColors' }); });
     el('btnPick').addEventListener('click', function() { vscode.postMessage({ type: 'pickFile' }); });
     el('btnClearPin').addEventListener('click', function() { vscode.postMessage({ type: 'clearPin' }); });
     el('btnRefresh').addEventListener('click', function() { vscode.postMessage({ type: 'refresh' }); });

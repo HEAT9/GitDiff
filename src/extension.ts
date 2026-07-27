@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { CompareSidebarViewProvider } from './compareSidebarView';
 import * as ops from './compareOperations';
 import * as core from './gitCompareCore';
+import { registerLineBlameHover } from './lineBlameHover';
+import { registerLineBlameColorPicker } from './lineBlameColorPicker';
 import { opErrMsg, readLocale, webviewLabels } from './i18n';
 
 async function resolveTargetUri(
@@ -95,6 +97,7 @@ async function pickTwoRefs(
 
 export function activate(context: vscode.ExtensionContext): void {
     core.registerDocumentProviders(context);
+    context.subscriptions.push(registerLineBlameHover(context), registerLineBlameColorPicker(context));
 
     const sidebar = new CompareSidebarViewProvider(context);
     sidebar.registerWindowListeners(context);

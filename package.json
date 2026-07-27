@@ -2,7 +2,7 @@
   "name": "gitdiff",
   "displayName": "GitDiff",
   "description": "GitDiff：侧栏随当前文件展示历史，点提交对比该提交相对父提交的改动；双列对比两版文件快照。中/英界面，可选 GitLab 风格差异主题。",
-  "version": "0.9.91",
+  "version": "0.11.1",
   "publisher": "local-dev",
   "icon": "media/gtdiff-icon.png",
   "license": "MIT",
@@ -14,6 +14,7 @@
     "Other"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onView:gitHistoryCompare.sidebar",
     "onCommand:gitHistoryCompare.compareWithHead",
     "onCommand:gitHistoryCompare.compareWorkingWithRevision",
@@ -21,10 +22,37 @@
     "onCommand:gitHistoryCompare.pickCompareHead",
     "onCommand:gitHistoryCompare.pickCompareRevision",
     "onCommand:gitHistoryCompare.pickCompareTwoRevisions",
-    "onCommand:gitHistoryCompare.openSidebar"
+    "onCommand:gitHistoryCompare.openSidebar",
+    "onCommand:gitdiff.showLineBlameOutput",
+    "onCommand:gitdiff.openLineBlameColorUI"
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "GitDiff",
+      "properties": {
+        "gitdiff.lineBlameHover.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "悬停在某一行时，在弹出提示中显示 Git blame（作者、时间、摘要等）。若与语言服务悬停合并，可在提示中切换分页查看。\n\nShow Git blame in the hover popup when pointing at a line."
+        },
+        "gitdiff.lineBlame.inlineAtCursor": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "**点击该行**使光标在该行后，行尾显示**已提交**行的最后一次修改者、时间与短哈希。**未提交（相对 HEAD 有改动）的行不显示行尾**，避免环境与 stdin 差异；未保存时仍用 `--contents` 与缓冲区对齐。悬停仍可看 blame 详情。\n\n**Click the line** for caret. Inline shows blame only for **committed** lines; **uncommitted lines have no inline** (local edits hidden by design). Hover still shows full blame when enabled."
+        },
+        "gitdiff.lineBlame.inlineColor": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "行尾 blame **文字颜色**（CSS）。例如 `#6b7280` 偏灰，`rgba(107,114,128,0.55)` 用透明度调深浅。留空则跟随主题 `descriptionForeground`。\n\nInline blame **text color** (CSS). Use `rgba(...,alpha)` to tune lightness. Empty = theme `descriptionForeground`."
+        },
+        "gitdiff.lineBlame.inlineBackgroundColor": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "行尾 blame **背景色**（CSS），如 `rgba(128,128,128,0.12)`。留空表示不画背景。\n\nOptional **background** behind inline blame text. Empty = no background."
+        }
+      }
+    },
     "commands": [
       {
         "command": "gitHistoryCompare.compareWithHead",
@@ -62,6 +90,16 @@
         "category": "GitDiff",
         "title": "打开比较侧边栏",
         "icon": "$(git-compare)"
+      },
+      {
+        "command": "gitdiff.showLineBlameOutput",
+        "category": "GitDiff",
+        "title": "打开行 blame 输出（GitDiff）"
+      },
+      {
+        "command": "gitdiff.openLineBlameColorUI",
+        "category": "GitDiff",
+        "title": "行 blame 颜色…（色相 / 饱和度 / 亮度 / 透明）"
       }
     ],
     "viewsContainers": {
